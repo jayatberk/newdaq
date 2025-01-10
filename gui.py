@@ -16,7 +16,6 @@ class H5FileHandler:
         self.start_time = None
         self.avg_time_gap = 0
         self.jkam_creation_time_array = []
-        self.all_datapoints = []  # Store all data points for FFT
 
     def process_file(self, file):
         file_ctime = os.path.getctime(file)
@@ -39,9 +38,6 @@ class H5FileHandler:
 
         self.shots_num += 1
 
-        # this should be replaced bc i don't know how to get the power
-        self.all_datapoints.append(file_ctime)  
-
         # Update Table
         row_position = self.gui.table.rowCount()
         self.gui.table.insertRow(row_position)
@@ -55,7 +51,6 @@ class H5FileHandler:
         self.gui.table.setItem(row_position, 3, QTableWidgetItem(summary_text))
 
         self.update_cumulative_plot()
-        self.update_fft_plot()
 
     def update_cumulative_plot(self):
         fig = self.gui.figures[0]
@@ -67,25 +62,6 @@ class H5FileHandler:
         ax.set_xlabel("Shot Number")
         ax.set_ylabel("Cumulative Value")
         self.gui.canvases[0].draw()
-
-    def update_fft_plot(self):
-        if len(self.all_datapoints) < 2:
-            return
-
-        fig = self.gui.figures[2]
-        fig.clear()
-        ax = fig.add_subplot(111)
-
-        # Perform FFT
-        fft_result = np.fft.fft(self.all_datapoints)
-        freqs = np.fft.fftfreq(len(self.all_datapoints))
-
-        # Plot FFT
-        ax.plot(freqs[:len(freqs)//2], np.abs(fft_result)[:len(freqs)//2])
-        ax.set_title("FFT of the Signal")
-        ax.set_xlabel("Frequency")
-        ax.set_ylabel("Amplitude")
-        self.gui.canvases[2].draw()
 
 class BinFileHandler:
     def __init__(self, gui):
@@ -207,7 +183,7 @@ class FileProcessorGUI(QMainWindow):
 
         self.chart_layout.addWidget(self.canvases[0], 0, 0)
         self.chart_layout.addWidget(self.canvases[1], 0, 1)
-        self.chart_layout.addWidget(self.canvases[2], 1, 0)  # FFT moved to bottom left
+        self.chart_layout.addWidget(self.canvases[2], 1, 0)  # FFT graph placeholder
 
         # Add File Button for Charts Tab
         self.add_file_button_charts = QPushButton("Add Files")
