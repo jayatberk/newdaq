@@ -8,8 +8,9 @@ from PyQt5.QtWidgets import (
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-class JKAMFileHandler:
-    def __init__(self):
+class H5FileHandler:
+    def __init__(self, gui):
+        self.gui = gui
         self.shots_num = 0
         self.cumulative_data = []
         self.start_time = None
@@ -21,39 +22,14 @@ class JKAMFileHandler:
         file_ctime = os.path.getctime(file)
         self.jkam_creation_time_array.append(file_ctime)
 
-        if self.shots_num == 0:
-            self.start_time = file_ctime
-        else:
-            curr_time = file_ctime
-            self.avg_time_gap = (curr_time - self.start_time) / self.shots_num
-
-        self.shots_num += 1
-        self.all_datapoints.append(file_ctime)  # Replace with actual datapoint extraction logic
-
-        # Perform calculations only; no updates to tables or graphs
-
-class GageFileHandler:
-    def __init__(self, gui):
-        self.gui = gui
-        self.shots_num = 0
-        self.cumulative_data = []
-        self.start_time = None
-        self.avg_time_gap = 0
-        self.gage_creation_time_array = []
-        self.all_datapoints = []  # Store all data points for FFT
-
-    def process_file(self, file):
-        file_ctime = os.path.getctime(file)
-        self.gage_creation_time_array.append(file_ctime)
-
         space_correct = True
         if self.shots_num == 0:
             self.start_time = file_ctime
         else:
             curr_time = file_ctime
             self.avg_time_gap = (curr_time - self.start_time) / self.shots_num
-            time_temp = self.gage_creation_time_array[self.shots_num]
-            if (np.abs(time_temp - self.gage_creation_time_array[self.shots_num - 1] - self.avg_time_gap) > 0.2 * self.avg_time_gap):
+            time_temp = self.jkam_creation_time_array[self.shots_num]
+            if (np.abs(time_temp - self.jkam_creation_time_array[self.shots_num - 1] - self.avg_time_gap) > 0.2 * self.avg_time_gap):
                 space_correct = False
 
         if space_correct:
@@ -63,8 +39,8 @@ class GageFileHandler:
 
         self.shots_num += 1
 
-        # Simulate appending a datapoint (for example purposes)
-        self.all_datapoints.append(file_ctime)  # Replace with actual datapoint extraction logic
+        # this should be replaced bc i don't know how to get the power
+        self.all_datapoints.append(file_ctime)  
 
         # Update Table
         row_position = self.gui.table.rowCount()
@@ -236,4 +212,49 @@ class FileProcessorGUI(QMainWindow):
         # Add File Button for Charts Tab
         self.add_file_button_charts = QPushButton("Add Files")
         self.add_file_button_charts.clicked.connect(self.add_files)
-        self.chart_layout.addWidget(self
+        self.chart_layout.addWidget(self.add_file_button_charts, 2, 0, 1, 2)
+
+        # Initialize plots
+        self.initialize_plot(0)
+        self.initialize_plot(1)
+        self.initialize_fft_plot()
+
+        # File Handlers
+        self.h5_handler = H5FileHandler(self)
+        self.bin_handler = BinFileHandler(self)
+
+    def initialize_plot(self, index):
+        ax = self.figures[index].add_subplot(111)
+        ax.plot([], [], marker="o")
+        ax.set_title(f"Cumulative Accepted Files {index + 1}")
+        ax.set_xlabel("Shot Number")
+        ax.set_ylabel("Cumulative Value")
+        self.canvases[index].draw()
+
+    def initialize_fft_plot(self):
+        ax = self.figures[2].add_subplot(111)
+        ax.plot([], [])
+        ax.set_title("FFT of the Signal")
+        ax.set_xlabel("Frequency")
+        ax.set_ylabel("Amplitude")
+        self.canvases[2].draw()
+
+    def add_files(self):
+        files, _ = QFileDialog.getOpenFileNames(self, "Select Files", "", "All Files (*.*)")
+        if not files:
+            return
+
+        for file in files:
+            file_extension = os.path.splitext(file)[-1].lower()
+            if file_extension == ".h5":
+                self.h5_handler.process_file(file)
+            elif file_extension == ".bin":
+                self.bin_handler.process_file(file)
+            else:
+                print(f"Unsupported file type: {file_extension}")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    main_window = FileProcessorGUI()
+    main_window.show()
+    sys.exit(app.exec_())
