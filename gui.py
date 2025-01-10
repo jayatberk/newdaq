@@ -3,8 +3,10 @@ import numpy as np
 import os
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QTableWidget, QTableWidgetItem,
-    QPushButton, QFileDialog, QWidget, QTabWidget, QGridLayout, QHeaderView
+    QPushButton, QFileDialog, QWidget, QTabWidget, QGridLayout, QHeaderView,
+    QLabel, QHBoxLayout, QLineEdit
 )
+from PyQt5.QtCore import QTimer
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
@@ -29,7 +31,7 @@ class JkamH5FileHandler:
         # For the JKAM chart (top-left)
         self.cumulative_data = []
 
-        # For the FFT chart (now in a separate tab)
+        # For the FFT chart (in a separate tab)
         self.all_datapoints = []  # Could store data from each shot for FFT
 
     def process_file(self, file):
@@ -41,6 +43,10 @@ class JkamH5FileHandler:
             file_ctime = os.path.getctime(file)
         except Exception as e:
             print(f"Error accessing file time for {file}: {e}")
+            return
+
+        if file in self.jkam_files:
+            # Already processed
             return
 
         self.jkam_files.append(file)
@@ -91,7 +97,7 @@ class JkamH5FileHandler:
 
         # Update the JKAM cumulative plot
         self.update_cumulative_plot()
-        # Update the FFT plot (now in a separate tab)
+        # Update the FFT plot (in a separate tab)
         self.update_fft_plot()
 
     def update_cumulative_plot(self):
@@ -145,8 +151,6 @@ class BinFileHandler:
         self.mask_valid_data = []
         self.jkam_fpga_matchlist = []
         self.cumulative_data = []
-
-        # A color array to mark points red (no JKAM) or green (JKAM found)
         self.color_array = []
 
         # Tracking
@@ -158,6 +162,9 @@ class BinFileHandler:
         Each time we get a new bin file, let's store it, then we will
         re-run acceptance logic for the entire bin-file list from scratch.
         """
+        if file in self.bin_files:
+            return
+
         try:
             file_ctime = os.path.getctime(file)
         except Exception as e:
@@ -174,7 +181,7 @@ class BinFileHandler:
         # Re-compute the entire acceptance logic for ALL shots
         self.rerun_acceptance()
 
-        # Finally, update the table with the info for this single newly added file
+        # Finally, update the table with info for this newly added file
         new_shot_index = len(self.fpga_creation_time_array) - 1
         data_valid = False
         jkam_space_correct_str = "None"
@@ -218,7 +225,6 @@ class BinFileHandler:
             total_span = self.fpga_creation_time_array[-1] - self.fpga_creation_time_array[0]
             self.avg_time_gap = total_span / (num_shots - 1)
 
-        # Initialize arrays
         self.mask_valid_data = np.zeros(num_shots, dtype=bool)
         self.jkam_fpga_matchlist = np.zeros(num_shots, dtype=int) - 1
         self.cumulative_data = []
@@ -228,7 +234,6 @@ class BinFileHandler:
         jkam_space_dict = self.gui.jkam_h5_file_handler.shots_dict
         jkam_time_temp_dict = self.gui.jkam_h5_file_handler.time_temp_dict
 
-        # Convert to numpy
         fpga_ctimes = np.array(self.fpga_creation_time_array)
         fpga_index_list = np.arange(num_shots)
 
@@ -238,7 +243,6 @@ class BinFileHandler:
                 space_correct = jkam_space_dict[shot_num]
 
                 if self.avg_time_gap == 0:
-                    # If there's only one shot, just accept if JKAM says space_correct
                     if space_correct:
                         self.mask_valid_data[shot_num] = True
                         self.color_array[shot_num] = "g"
@@ -246,20 +250,17 @@ class BinFileHandler:
                     else:
                         self.mask_valid_data[shot_num] = False
                         self.color_array[shot_num] = "r"
-                        self.jkam_fpga_matchlist[shot_num] = -1
                 else:
                     time_diffs = np.abs(fpga_ctimes - jkam_time)
                     min_diff = np.min(time_diffs)
 
-                    # Accept if min_diff <= 0.2 * avg_time_gap AND JKAM is space_correct
                     if (min_diff <= 0.2 * self.avg_time_gap) and space_correct:
                         self.mask_valid_data[shot_num] = True
                         closest_idx = np.argmin(time_diffs)
                         self.jkam_fpga_matchlist[shot_num] = fpga_index_list[closest_idx]
-                        self.color_array[shot_num] = "g"  # green if matched
+                        self.color_array[shot_num] = "g"
                     else:
                         self.mask_valid_data[shot_num] = False
-                        self.jkam_fpga_matchlist[shot_num] = -1
                         self.color_array[shot_num] = "r"
                         print(f"FPGA error at shot {shot_num}")
             else:
@@ -267,7 +268,7 @@ class BinFileHandler:
                 self.mask_valid_data[shot_num] = False
                 self.jkam_fpga_matchlist[shot_num] = -1
 
-            # Build the cumulative_data array based on acceptance
+            # Build the cumulative_data array
             if self.mask_valid_data[shot_num]:
                 new_val = (self.cumulative_data[-1] + 1) if self.cumulative_data else 1
             else:
@@ -275,10 +276,6 @@ class BinFileHandler:
             self.cumulative_data.append(new_val)
 
     def update_chart_2(self):
-        """
-        Plot the cumulative acceptance of bin (FPGA) files in the top-right chart.
-        Points are green if JKAM exists & accepted, red if JKAM doesn't exist or not accepted.
-        """
         fig = self.gui.figures[1]
         fig.clear()
         ax = fig.add_subplot(111)
@@ -287,7 +284,6 @@ class BinFileHandler:
         for i in range(len(self.cumulative_data)):
             ax.plot(x_vals[i], self.cumulative_data[i], marker="o", color=self.color_array[i])
 
-        # Connect the points with a line for visual clarity
         ax.plot(x_vals, self.cumulative_data, linestyle="-", alpha=0.3)
 
         ax.set_title("Cumulative Accepted Files 2 (Bin/FPGA)")
@@ -319,6 +315,9 @@ class GageScopeH5FileHandler:
         self.avg_time_gap = 0
 
     def process_file(self, file):
+        if file in self.gage_files:
+            return
+
         try:
             file_ctime = os.path.getctime(file)
         except Exception as e:
@@ -331,10 +330,8 @@ class GageScopeH5FileHandler:
         if len(self.gage_creation_time_array) == 1:
             self.start_time = file_ctime
 
-        # Rerun acceptance for all existing Gage shots
         self.rerun_acceptance_gage()
 
-        # Insert new row into Additional Table 2
         new_shot_index = len(self.gage_creation_time_array) - 1
         data_valid = False
         jkam_space_correct_str = "None"
@@ -370,13 +367,11 @@ class GageScopeH5FileHandler:
             total_span = self.gage_creation_time_array[-1] - self.gage_creation_time_array[0]
             self.avg_time_gap = total_span / (num_shots - 1)
 
-        # Initialize arrays
         self.mask_valid_data = np.zeros(num_shots, dtype=bool)
         self.jkam_gage_matchlist = np.zeros(num_shots, dtype=int) - 1
         self.cumulative_data = []
-        self.color_array = ["r"] * num_shots  # default red if no JKAM
+        self.color_array = ["r"] * num_shots
 
-        # Retrieve JKAM dictionaries
         jkam_space_dict = self.gui.jkam_h5_file_handler.shots_dict
         jkam_time_temp_dict = self.gui.jkam_h5_file_handler.time_temp_dict
 
@@ -389,7 +384,6 @@ class GageScopeH5FileHandler:
                 space_correct = jkam_space_dict[shot_num]
 
                 if self.avg_time_gap == 0:
-                    # If there's only one Gage shot, accept if JKAM is space_correct
                     if space_correct:
                         self.mask_valid_data[shot_num] = True
                         self.color_array[shot_num] = "g"
@@ -397,7 +391,6 @@ class GageScopeH5FileHandler:
                     else:
                         self.mask_valid_data[shot_num] = False
                         self.color_array[shot_num] = "r"
-                        self.jkam_gage_matchlist[shot_num] = -1
                 else:
                     time_diffs = np.abs(gage_ctimes - jkam_time)
                     min_diff = np.min(time_diffs)
@@ -409,11 +402,9 @@ class GageScopeH5FileHandler:
                         self.color_array[shot_num] = "g"
                     else:
                         self.mask_valid_data[shot_num] = False
-                        self.jkam_gage_matchlist[shot_num] = -1
                         self.color_array[shot_num] = "r"
                         print(f"Gage error at shot {shot_num}")
             else:
-                # No JKAM data => remain red
                 self.mask_valid_data[shot_num] = False
                 self.jkam_gage_matchlist[shot_num] = -1
 
@@ -424,9 +415,6 @@ class GageScopeH5FileHandler:
             self.cumulative_data.append(new_val)
 
     def update_chart_3(self):
-        """
-        Bottom-right chart for GageScope acceptance
-        """
         fig = self.gui.figures[3]
         fig.clear()
         ax = fig.add_subplot(111)
@@ -446,20 +434,9 @@ class GageScopeH5FileHandler:
 ###############################################################################
 class RedPitayaFileHandler:
     """
-    Handles Red Pitaya .txt files with the provided acceptance logic:
-    -----------------------------------------------------------
-    1) We'll parse each .txt file using np.loadtxt(...).
-    2) We'll check time_temp from JKAM for that shot index.
-    3) We'll use the snippet logic for space_correct and acceptance:
-    
-       space_correct = True
-       # check neighbors in jkam_creation_time_array for shot_num-1, shot_num+1
-       # check if np.min(abs(rp_creation_time_array - time_temp)) <= 0.3*avg_time_gap
-       # if pass => accepted, else => rejected
-    -----------------------------------------------------------
-    We'll mimic the dynamic approach used by FPGA & Gage:
-    - Each .txt file is one "shot_num" for Red Pitaya.
-    - Then we re-run acceptance for all shots from scratch.
+    Handles Red Pitaya .txt files with the provided acceptance logic.
+    If a file is empty or blank, we do not crash the GUI. We just mark it as
+    an error on the chart and move on.
     """
     def __init__(self, gui):
         self.gui = gui
@@ -474,7 +451,11 @@ class RedPitayaFileHandler:
         """
         Each new .txt file is a new shot_num for Red Pitaya.
         We'll parse the file, store the times, then re-run acceptance.
+        If the file is empty, we skip the data load and label it as a failure.
         """
+        if file in self.rp_files:
+            return
+
         if not os.path.exists(file):
             print(f"File does not exist: {file}")
             return
@@ -483,12 +464,25 @@ class RedPitayaFileHandler:
         try:
             filename_phase = np.loadtxt(file, dtype=float, delimiter=',')
         except Exception as e:
+            # Could be empty or any parse error
             print(f"Failed to load Red Pitaya file {file}: {e}")
+            # Mark as red/failure
+            self.rp_files.append(file)
+            self.rp_times_list.append(None)  # No data
+            self.rerun_acceptance_rp()       # We'll put a red mark for this shot
+            return
+
+        # If the file has no data or shape is 0
+        if filename_phase.size == 0:
+            print(f"Error: Red Pitaya file is empty: {file}")
+            self.rp_files.append(file)
+            self.rp_times_list.append(None)
+            self.rerun_acceptance_rp()
             return
 
         # Suppose the first column is the "rp_creation_time_array"
         if len(filename_phase.shape) == 1:
-            # If it's only one row of data, reshape
+            # If there's only one row of data, reshape
             filename_phase = filename_phase.reshape(1, -1)
         rp_creation_time_array = filename_phase[:, 0]  # all time values
 
@@ -518,10 +512,9 @@ class RedPitayaFileHandler:
         self.gui.additional_table_3.setItem(row_position, 3, QTableWidgetItem(jkam_space_correct_str))
 
         # Summaries
-        summary_text = (
-            f"<b>RP Times Count:</b> {len(rp_creation_time_array)}"
-        )
-        self.gui.additional_table_3.setItem(row_position, 4, QTableWidgetItem(summary_text))
+        info_str = "No Data" if (rp_creation_time_array is None or len(rp_creation_time_array) == 0) else \
+                   f"RP Times Count: {len(rp_creation_time_array)}"
+        self.gui.additional_table_3.setItem(row_position, 4, QTableWidgetItem(info_str))
 
         # Update the chart
         self.update_chart_rp()
@@ -529,11 +522,11 @@ class RedPitayaFileHandler:
     def rerun_acceptance_rp(self):
         """
         Re-check acceptance for ALL Red Pitaya shots from scratch,
-        using the provided logic snippet that references jkam.
+        using the snippet logic that references JKAM.
+        If a shot has None data, it is automatically red/failure.
         """
         num_shots = len(self.rp_files)
 
-        # We'll create arrays of length num_shots
         self.mask_valid_data_rp = [False]*num_shots
         self.jkam_rp_matchlist = [-1]*num_shots
         self.color_array = ["r"]*num_shots
@@ -546,38 +539,39 @@ class RedPitayaFileHandler:
         jkam_avg_time_gap = self.gui.jkam_h5_file_handler.avg_time_gap
         total_jkam_shots = len(jkam_ctimes)
 
-        # For each Red Pitaya shot (same "shot_num" as index)
         for shot_num in range(num_shots):
-            # If there's no JKAM for this shot_num, remain red & skip
-            if shot_num not in jkam_time_temp_dict or shot_num not in jkam_space_dict:
+            rp_creation_time_array = self.rp_times_list[shot_num]
+            if rp_creation_time_array is None or len(rp_creation_time_array) == 0:
+                # It's blank or invalid
                 self.mask_valid_data_rp[shot_num] = False
                 self.color_array[shot_num] = "r"
                 self.jkam_rp_matchlist[shot_num] = -1
+                self.cumulative_data.append(0 if self.cumulative_data else 0)
+                continue
+
+            if (shot_num not in jkam_time_temp_dict) or (shot_num not in jkam_space_dict):
+                # no JKAM => fail
+                self.mask_valid_data_rp[shot_num] = False
+                self.color_array[shot_num] = "r"
+                self.jkam_rp_matchlist[shot_num] = -1
+                self.cumulative_data.append(0 if self.cumulative_data else 0)
                 continue
 
             # We do have JKAM
             time_temp = jkam_time_temp_dict[shot_num]
             jkam_space_correct = jkam_space_dict[shot_num]
 
-            # from the snippet:
             space_correct = True
-            # If shot_num>0, check jkam neighbor -1
             if shot_num > 0 and shot_num < total_jkam_shots:
                 if abs(time_temp - jkam_ctimes[shot_num - 1] - jkam_avg_time_gap) > 0.3*jkam_avg_time_gap:
                     space_correct = False
-            # If shot_num<(num_shots-1), check jkam neighbor +1
-            # but carefully ensure shot_num+1 < total_jkam_shots
+
             if shot_num < (total_jkam_shots - 1):
                 if abs(-time_temp + jkam_ctimes[shot_num+1] - jkam_avg_time_gap) > 0.3*jkam_avg_time_gap:
                     space_correct = False
 
-            # Now check the Red Pitaya times for that shot
-            rp_creation_time_array = self.rp_times_list[shot_num]
             rp_index_list = np.arange(len(rp_creation_time_array))
 
-            # from snippet:
-            # if (np.min(np.abs(rp_creation_time_array - time_temp)) <= 0.3*avg_time_gap) & space_correct
-            # We'll treat avg_time_gap as jkam_avg_time_gap
             if jkam_space_correct and space_correct:
                 min_diff = np.min(np.abs(rp_creation_time_array - time_temp))
                 if min_diff <= 0.3*jkam_avg_time_gap:
@@ -591,13 +585,11 @@ class RedPitayaFileHandler:
                     self.color_array[shot_num] = "r"
                     self.jkam_rp_matchlist[shot_num] = -1
             else:
-                # either jkam wasn't space_correct or neighbor check failed
                 print(f"error at {shot_num}")
                 self.mask_valid_data_rp[shot_num] = False
                 self.color_array[shot_num] = "r"
                 self.jkam_rp_matchlist[shot_num] = -1
 
-            # Build the cumulative_data array
             if self.mask_valid_data_rp[shot_num]:
                 new_val = (self.cumulative_data[-1] + 1) if self.cumulative_data else 1
             else:
@@ -608,7 +600,7 @@ class RedPitayaFileHandler:
         """
         Bottom-left chart for Red Pitaya acceptance.
         """
-        fig = self.gui.figures[2]  # we placed Red Pitaya in bottom-left now
+        fig = self.gui.figures[2]  # we placed Red Pitaya in bottom-left
         fig.clear()
         ax = fig.add_subplot(111)
 
@@ -630,7 +622,6 @@ class FileProcessorGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("File Processor GUI")
-        # Make the window wide enough to display 2x2 charts plus extra tabs
         self.setGeometry(100, 100, 1600, 900)
 
         # Central widget
@@ -675,7 +666,7 @@ class FileProcessorGUI(QMainWindow):
         self.tabs.addTab(self.fft_tab, "FFT Graph")
 
         ############################################################################
-        # JKAM table (4 columns)
+        # JKAM table
         ############################################################################
         self.table = QTableWidget()
         self.table.setColumnCount(4)
@@ -690,7 +681,7 @@ class FileProcessorGUI(QMainWindow):
         self.table_layout.addWidget(self.add_file_button_table)
 
         ############################################################################
-        # FPGA table (5 columns)
+        # FPGA table
         ############################################################################
         self.additional_table_1 = QTableWidget()
         self.additional_table_1.setColumnCount(5)
@@ -702,7 +693,7 @@ class FileProcessorGUI(QMainWindow):
         self.additional_table_tab_1_layout.addWidget(self.additional_table_1)
 
         ############################################################################
-        # GageScope table (5 columns)
+        # GageScope table
         ############################################################################
         self.additional_table_2 = QTableWidget()
         self.additional_table_2.setColumnCount(5)
@@ -714,7 +705,7 @@ class FileProcessorGUI(QMainWindow):
         self.additional_table_tab_2_layout.addWidget(self.additional_table_2)
 
         ############################################################################
-        # Red Pitaya table (5 columns)
+        # Red Pitaya table
         ############################################################################
         self.additional_table_3 = QTableWidget()
         self.additional_table_3.setColumnCount(5)
@@ -727,8 +718,6 @@ class FileProcessorGUI(QMainWindow):
 
         ############################################################################
         # Setup the 5 figures
-        # Figures layout in the "Charts" tab: a 2x2 grid for (0, 1, 2, 3),
-        # and figure[4] in the "FFT Graph" tab
         ############################################################################
         self.figures = [Figure() for _ in range(5)]
         self.canvases = [FigureCanvas(fig) for fig in self.figures]
@@ -748,7 +737,7 @@ class FileProcessorGUI(QMainWindow):
         self.add_file_button_charts.clicked.connect(self.add_files)
         self.chart_layout.addWidget(self.add_file_button_charts, 2, 0, 1, 2)
 
-        # Figure[4] is the FFT chart, placed in the separate "FFT Graph" tab
+        # figure[4] is the FFT chart, placed in the separate "FFT Graph" tab
         self.fft_tab_layout.addWidget(self.canvases[4])
 
         # Initialize each chart
@@ -764,6 +753,33 @@ class FileProcessorGUI(QMainWindow):
         self.gage_h5_file_handler = GageScopeH5FileHandler(self)
         self.redpitaya_handler = RedPitayaFileHandler(self)
 
+        # =============== STREAMING RELATED UI AND LOGIC ===============
+        # Add a small horizontal layout at the bottom for streaming controls
+        self.stream_controls_layout = QHBoxLayout()
+        self.stream_dir_label = QLabel("Stream Directory:")
+        self.stream_dir_edit = QLineEdit(os.getcwd())  # default to current dir
+        self.stream_start_button = QPushButton("Start Stream")
+        self.stream_stop_button = QPushButton("Stop Stream")
+
+        self.stream_controls_layout.addWidget(self.stream_dir_label)
+        self.stream_controls_layout.addWidget(self.stream_dir_edit)
+        self.stream_controls_layout.addWidget(self.stream_start_button)
+        self.stream_controls_layout.addWidget(self.stream_stop_button)
+
+        self.layout.addLayout(self.stream_controls_layout)
+
+        # Initialize QTimer for streaming
+        self.stream_timer = QTimer()
+        self.stream_timer.setInterval(2000)  # check every 2 seconds
+        self.stream_timer.timeout.connect(self.check_for_new_files)
+
+        # Connect start/stop
+        self.stream_start_button.clicked.connect(self.start_stream)
+        self.stream_stop_button.clicked.connect(self.stop_stream)
+
+        # Keep track of files we've already processed in streaming mode
+        self.stream_processed_files = set()
+
     def initialize_plot(self, index, title_str):
         ax = self.figures[index].add_subplot(111)
         ax.plot([], [], marker="o")
@@ -773,9 +789,6 @@ class FileProcessorGUI(QMainWindow):
         self.canvases[index].draw()
 
     def initialize_fft_plot(self, index):
-        """
-        Setup the figure used for FFT in the new 'FFT Graph' tab
-        """
         ax = self.figures[index].add_subplot(111)
         ax.plot([], [])
         ax.set_title("FFT of the Signal")
@@ -792,30 +805,74 @@ class FileProcessorGUI(QMainWindow):
             return
 
         for file in files:
-            file_extension = os.path.splitext(file)[-1].lower()
-            fname_lower = os.path.basename(file).lower()
+            self.process_one_file(file)
 
-            # JKAM or Gage
-            if file_extension == ".h5":
-                if "jkam" in fname_lower:
-                    self.jkam_h5_file_handler.process_file(file)
-                elif "gage" in fname_lower:
-                    self.gage_h5_file_handler.process_file(file)
-                else:
-                    print(f"Unsupported .h5 file (not recognized as JKAM or GageScope). Skipping: {file}")
+    def process_one_file(self, file):
+        """
+        A helper function to handle a single file's logic.
+        This is used by both add_files() and the streaming approach.
+        """
+        file_extension = os.path.splitext(file)[-1].lower()
+        fname_lower = os.path.basename(file).lower()
 
-            # FPGA
-            elif file_extension == ".bin":
-                self.bin_handler.process_file(file)
-
-            # Red Pitaya .txt
-            elif file_extension == ".txt":
-                self.redpitaya_handler.process_file(file)
-
+        # JKAM or Gage
+        if file_extension == ".h5":
+            if "jkam" in fname_lower:
+                self.jkam_h5_file_handler.process_file(file)
+            elif "gage" in fname_lower:
+                self.gage_h5_file_handler.process_file(file)
             else:
-                # If it's something else (e.g. photon timer extension, etc.), skip
-                print(f"Unsupported file extension: {file_extension}, skipping file: {file}")
+                print(f"Unsupported .h5 file (not recognized as JKAM or GageScope). Skipping: {file}")
 
+        # FPGA
+        elif file_extension == ".bin":
+            self.bin_handler.process_file(file)
+
+        # Red Pitaya .txt
+        elif file_extension == ".txt":
+            self.redpitaya_handler.process_file(file)
+
+        else:
+            print(f"Unsupported file extension: {file_extension}, skipping file: {file}")
+
+    # ---------------- STREAMING LOGIC ----------------
+    def start_stream(self):
+        """
+        Start the QTimer-based streaming. We'll monitor the directory
+        specified in self.stream_dir_edit for new files.
+        """
+        self.stream_processed_files = set()  # reset
+        self.stream_timer.start()
+        print("Stream started. Monitoring directory:", self.stream_dir_edit.text())
+
+    def stop_stream(self):
+        """
+        Stop the streaming timer.
+        """
+        self.stream_timer.stop()
+        print("Stream stopped.")
+
+    def check_for_new_files(self):
+        """
+        Periodically called by self.stream_timer every few seconds.
+        Checks the specified directory for new files that haven't been processed yet.
+        """
+        watch_dir = self.stream_dir_edit.text()
+        if not os.path.isdir(watch_dir):
+            print(f"Invalid stream directory: {watch_dir}")
+            return
+
+        all_files = [os.path.join(watch_dir, f) for f in os.listdir(watch_dir)]
+        # Filter only actual files (not subdirs, etc.)
+        all_files = [f for f in all_files if os.path.isfile(f)]
+
+        # Check for new files that are not in self.stream_processed_files
+        new_files = [f for f in all_files if f not in self.stream_processed_files]
+
+        # Process each new file
+        for nf in new_files:
+            self.process_one_file(nf)
+            self.stream_processed_files.add(nf)
 
 ###############################################################################
 #                               Main Run                                      #
