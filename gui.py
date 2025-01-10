@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-class H5FileHandler:
+class JkamH5FileHandler:
     def __init__(self, gui):
         self.gui = gui
         self.shots_num = 0
@@ -86,6 +86,14 @@ class H5FileHandler:
         ax.set_xlabel("Frequency")
         ax.set_ylabel("Amplitude")
         self.gui.canvases[2].draw()
+
+class GageScopeH5FileHandler:
+    def __init__(self, gui):
+        self.gui = gui
+        # Logic for GageScope .h5 files will be implemented here
+    
+    def process_file(self, file):
+        pass  # Placeholder for GageScope file handling logic
 
 class BinFileHandler:
     def __init__(self, gui):
@@ -220,7 +228,8 @@ class FileProcessorGUI(QMainWindow):
         self.initialize_fft_plot()
 
         # File Handlers
-        self.h5_handler = H5FileHandler(self)
+        self.jkam_h5_handler = JkamH5FileHandler(self)
+        self.gagescope_h5_handler = GageScopeH5FileHandler(self)
         self.bin_handler = BinFileHandler(self)
 
     def initialize_plot(self, index):
@@ -247,7 +256,12 @@ class FileProcessorGUI(QMainWindow):
         for file in files:
             file_extension = os.path.splitext(file)[-1].lower()
             if file_extension == ".h5":
-                self.h5_handler.process_file(file)
+                if "jkam" in file.lower():
+                    self.jkam_h5_handler.process_file(file)
+                elif "gage" in file.lower():
+                    self.gagescope_h5_handler.process_file(file)
+                else:
+                    print(f"Unsupported file (.h5 but not jkam or gagescope)")
             elif file_extension == ".bin":
                 self.bin_handler.process_file(file)
             else:
