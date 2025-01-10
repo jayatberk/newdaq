@@ -8,6 +8,114 @@ from PyQt5.QtWidgets import (
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
+class H5FileHandler:
+    def __init__(self, gui):
+        self.gui = gui
+        self.shots_num = 0
+        self.cumulative_data = []
+        self.start_time = None
+        self.avg_time_gap = 0
+        self.jkam_creation_time_array = []
+
+    def process_file(self, file):
+        file_ctime = os.path.getctime(file)
+        self.jkam_creation_time_array.append(file_ctime)
+
+        space_correct = True
+        if self.shots_num == 0:
+            self.start_time = file_ctime
+        else:
+            curr_time = file_ctime
+            self.avg_time_gap = (curr_time - self.start_time) / self.shots_num
+            time_temp = self.jkam_creation_time_array[self.shots_num]
+            if (np.abs(time_temp - self.jkam_creation_time_array[self.shots_num - 1] - self.avg_time_gap) > 0.2 * self.avg_time_gap):
+                space_correct = False
+
+        if space_correct:
+            self.cumulative_data.append(self.cumulative_data[-1] + 1 if self.cumulative_data else 1)
+        else:
+            self.cumulative_data.append(0)
+
+        self.shots_num += 1
+
+        # Update Table
+        row_position = self.gui.table.rowCount()
+        self.gui.table.insertRow(row_position)
+        self.gui.table.setItem(row_position, 0, QTableWidgetItem(str(self.shots_num - 1)))
+        self.gui.table.setItem(row_position, 1, QTableWidgetItem(file))
+        self.gui.table.setItem(row_position, 2, QTableWidgetItem(str(space_correct)))
+        summary_text = (
+            f"<b>Start Time:</b> {self.start_time}, <b>Current Time:</b> {file_ctime}, "
+            f"<b>Avg Time Gap:</b> {self.avg_time_gap}"
+        )
+        self.gui.table.setItem(row_position, 3, QTableWidgetItem(summary_text))
+
+        self.update_cumulative_plot()
+
+    def update_cumulative_plot(self):
+        fig = self.gui.figures[0]
+        fig.clear()
+        ax = fig.add_subplot(111)
+        x_vals = list(range(len(self.cumulative_data)))
+        ax.plot(x_vals, self.cumulative_data, marker="o", linestyle="-")
+        ax.set_title("Cumulative Accepted Files 1")
+        ax.set_xlabel("Shot Number")
+        ax.set_ylabel("Cumulative Value")
+        self.gui.canvases[0].draw()
+
+class BinFileHandler:
+    def __init__(self, gui):
+        self.gui = gui
+        self.shots_num = 0
+        self.cumulative_data = []
+        self.start_time = None
+        self.avg_time_gap = 0
+        self.jkam_creation_time_array = []
+
+    def process_file(self, file):
+        # Simulating processing logic for .bin files
+        file_ctime = os.path.getctime(file)
+        self.jkam_creation_time_array.append(file_ctime)
+
+        data_valid = True
+        if self.shots_num == 0:
+            self.start_time = file_ctime
+        else:
+            curr_time = file_ctime
+            self.avg_time_gap = (curr_time - self.start_time) / self.shots_num
+
+        if data_valid:
+            self.cumulative_data.append(self.cumulative_data[-1] + 1 if self.cumulative_data else 1)
+        else:
+            self.cumulative_data.append(0)
+
+        self.shots_num += 1
+
+        # Update Table 2
+        row_position = self.gui.additional_table_1.rowCount()
+        self.gui.additional_table_1.insertRow(row_position)
+        self.gui.additional_table_1.setItem(row_position, 0, QTableWidgetItem(str(self.shots_num - 1)))
+        self.gui.additional_table_1.setItem(row_position, 1, QTableWidgetItem(file))
+        self.gui.additional_table_1.setItem(row_position, 2, QTableWidgetItem(str(data_valid)))
+        summary_text = (
+            f"<b>Start Time:</b> {self.start_time}, <b>Current Time:</b> {file_ctime}, "
+            f"<b>Avg Time Gap:</b> {self.avg_time_gap}"
+        )
+        self.gui.additional_table_1.setItem(row_position, 3, QTableWidgetItem(summary_text))
+
+        self.update_chart_2()
+
+    def update_chart_2(self):
+        fig = self.gui.figures[1]
+        fig.clear()
+        ax = fig.add_subplot(111)
+        x_vals = list(range(len(self.cumulative_data)))
+        ax.plot(x_vals, self.cumulative_data, marker="o", linestyle="-")
+        ax.set_title("Cumulative Accepted Files 2")
+        ax.set_xlabel("Shot Number")
+        ax.set_ylabel("Cumulative Value")
+        self.gui.canvases[1].draw()
+
 class FileProcessorGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -103,13 +211,9 @@ class FileProcessorGUI(QMainWindow):
         self.initialize_plot(2)
         self.initialize_fft_plot()
 
-        # Logic variables
-        self.jkam_creation_time_array = []
-        self.avg_time_gap = 0
-        self.shots_num = 0
-        self.start_time = None
-        self.cumulative_accepted = 0
-        self.cumulative_data = []
+        # File Handlers
+        self.h5_handler = H5FileHandler(self)
+        self.bin_handler = BinFileHandler(self)
 
     def initialize_plot(self, index):
         ax = self.figures[index].add_subplot(111)
@@ -128,56 +232,18 @@ class FileProcessorGUI(QMainWindow):
         self.canvases[3].draw()
 
     def add_files(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "Select Files", "", "HDF5 Files (*.h5)")
+        files, _ = QFileDialog.getOpenFileNames(self, "Select Files", "", "All Files (*.*)")
         if not files:
             return
 
         for file in files:
-            self.process_file(file)
-
-        self.update_cumulative_plot()
-
-    def process_file(self, file):
-        file_ctime = os.path.getctime(file)
-        self.jkam_creation_time_array.append(file_ctime)
-
-        space_correct = True
-        if self.shots_num == 0:
-            self.start_time = file_ctime
-        else:
-            curr_time = file_ctime
-            self.avg_time_gap = (curr_time - self.start_time) / self.shots_num
-            time_temp = self.jkam_creation_time_array[self.shots_num]
-            if (np.abs(time_temp - self.jkam_creation_time_array[self.shots_num - 1] - self.avg_time_gap) > 0.2 * self.avg_time_gap):
-                space_correct = False
-
-        self.cumulative_accepted += 1 if space_correct else 0
-        self.shots_num += 1
-
-        self.cumulative_data.append(self.cumulative_accepted if space_correct else 0)
-
-        # Update Table
-        row_position = self.table.rowCount()
-        self.table.insertRow(row_position)
-        self.table.setItem(row_position, 0, QTableWidgetItem(str(self.shots_num - 1)))
-        self.table.setItem(row_position, 1, QTableWidgetItem(file))
-        self.table.setItem(row_position, 2, QTableWidgetItem(str(space_correct)))
-        summary_text = (
-            f"<b>Start Time:</b> {self.start_time}, <b>Current Time:</b> {file_ctime}, "
-            f"<b>Avg Time Gap:</b> {self.avg_time_gap}"
-        )
-        self.table.setItem(row_position, 3, QTableWidgetItem(summary_text))
-
-    def update_cumulative_plot(self):
-        fig = self.figures[0]
-        fig.clear()
-        ax = fig.add_subplot(111)
-        x_vals = list(range(len(self.cumulative_data)))
-        ax.plot(x_vals, self.cumulative_data, marker="o", linestyle="-")
-        ax.set_title("Cumulative Accepted Files 1")
-        ax.set_xlabel("Shot Number")
-        ax.set_ylabel("Cumulative Value")
-        self.canvases[0].draw()
+            file_extension = os.path.splitext(file)[-1].lower()
+            if file_extension == ".h5":
+                self.h5_handler.process_file(file)
+            elif file_extension == ".bin":
+                self.bin_handler.process_file(file)
+            else:
+                print(f"Unsupported file type: {file_extension}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
