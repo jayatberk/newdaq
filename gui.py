@@ -4,22 +4,11 @@ import os
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QFileDialog, QWidget, QTabWidget, QGridLayout, QHeaderView,
-    QLabel, QHBoxLayout, QLineEdit
+    QLabel, QHBoxLayout, QLineEdit, QDockWidget, QCheckBox
 )
-from PyQt5.QtCore import QTimer
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
 from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QDockWidget, QCheckBox,
-    QLabel, QLineEdit, QPushButton, QTabWidget, QGridLayout, QTableWidget,
-    QTableWidgetItem, QHeaderView, QFileDialog
-)
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-import os
-import numpy as np
-import sys
 
 
 ###############################################################################
@@ -153,6 +142,7 @@ class JkamH5FileHandler:
         ax.set_xlabel("Frequency")
         ax.set_ylabel("Amplitude")
         self.gui.canvases[4].draw()
+
 
 ###############################################################################
 #                      FPGA / Bin Handler                                     #
@@ -623,7 +613,6 @@ class RedPitayaFileHandler:
         jkam_space_dict = self.gui.jkam_h5_file_handler.shots_dict
         jkam_time_temp_dict = self.gui.jkam_h5_file_handler.time_temp_dict
         jkam_avg_time_gap = self.gui.jkam_h5_file_handler.avg_time_gap
-        total_jkam_shots = len(jkam_ctimes)
 
         for shot_num in range(num_shots):
             # If we've already locked acceptance, keep it
@@ -706,6 +695,7 @@ class RedPitayaFileHandler:
         ax.set_ylabel("Cumulative Value")
         self.gui.canvases[2].draw()
 
+
 ###############################################################################
 #                           Main GUI (Modified)                               #
 ###############################################################################
@@ -717,6 +707,14 @@ class FileProcessorGUI(QMainWindow):
 
         # A flag to indicate if the user has accepted the inputs
         self.inputs_accepted = False
+
+        # --------------------------------------------------------------
+        # IMPORTANT FIX: Initialize the file handlers so we don't crash
+        self.jkam_h5_file_handler = JkamH5FileHandler(self)
+        self.gage_h5_file_handler = GageScopeH5FileHandler(self)
+        self.bin_handler = BinFileHandler(self)
+        self.redpitaya_handler = RedPitayaFileHandler(self)
+        # --------------------------------------------------------------
 
         # Create a central widget with a horizontal layout,
         # so we can have the new feature-options panel on the left
@@ -804,6 +802,12 @@ class FileProcessorGUI(QMainWindow):
         self.accept_button = QPushButton("Accept Inputs")
         self.accept_button.clicked.connect(self.accept_inputs)
         self.feature_options_layout.addWidget(self.accept_button)
+
+        # Warning label to put in inputs or it won't start
+        self.inputs_status_label = QLabel(
+            "PLEASE GIVE INPUTS AND CLICK \"Accept Inputs \" BUTTON TO START PROCESSING FILES!"
+        )
+        self.feature_options_layout.addWidget(self.inputs_status_label)
 
         self.feature_options_layout.addStretch()
         self.feature_options_widget.setLayout(self.feature_options_layout)
@@ -974,6 +978,7 @@ class FileProcessorGUI(QMainWindow):
 
         # If we got here, all fields are filled
         self.inputs_accepted = True
+        self.inputs_status_label.setText("Inputs accepted! You may now use the rest of the GUI!")
         print("Inputs accepted! You may now use the rest of the GUI.")
 
     def initialize_plot(self, index, title_str):
