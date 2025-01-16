@@ -26,6 +26,7 @@ class JkamH5FileHandler:
 
         # Tracking
         self.shots_num = 0
+        self.last_passed_idx = 0
         self.start_time = None
         self.avg_time_gap = 0
 
@@ -61,15 +62,13 @@ class JkamH5FileHandler:
         if self.shots_num == 0:
             self.start_time = file_ctime
         else:
-            curr_time = file_ctime
-            self.avg_time_gap = abs((curr_time - self.start_time) / self.shots_num)
-            prev_time_temp = self.jkam_creation_time_array[self.shots_num - 1]
-
-            # Check if this shot's time is near the expected spacing
-            expected_time_temp = prev_time_temp + self.avg_time_gap
-            normalized_difference = abs(time_temp - expected_time_temp) / self.avg_time_gap
-            if (normalized_difference > .3):
+            self.avg_time_gap = abs((time_temp - self.start_time) / (self.shots_num+1))
+            #using self.shots_num to refer to the previous shot (since we don't update shots_nnum until the end of this loop)
+            if (self.shots_num > 0) & (np.abs(time_temp - self.jkam_creation_time_array[self.shots_num] - self.avg_time_gap) > 0.3 * self.avg_time_gap):
                 space_correct = False
+            else:
+                self.last_passed_idx = self.shots_num+1
+
 
         # Store space_correct & time_temp for this shot index
         self.shots_dict[self.shots_num] = space_correct
@@ -77,14 +76,10 @@ class JkamH5FileHandler:
 
         # Modified cumulative data calculation
         if space_correct:
-            if not self.cumulative_data or self.cumulative_data[-1] == 0:
-                # If first point or previous was failure, start from highest + 1
-                new_val = self.highest_count + 1
-            else:
-                new_val = self.cumulative_data[-1] + 1
-            self.highest_count = max(self.highest_count, new_val)
+            new_val = (self.cumulative_data[self.last_passed_idx-1] + 1) if self.cumulative_data else 1
         else:
             new_val = 0
+        
         self.cumulative_data.append(new_val)
 
         self.shots_num += 1
@@ -648,7 +643,7 @@ class RedPitayaFileHandler:
             time_temp = jkam_time_temp_dict[shot_num]
             jkam_space_correct = jkam_space_dict[shot_num]
 
-            if jkam_space_correct:
+            if jkam_space_correct: #LOOK INTO THIS PART SEEMS FISHY
                 # Check if at least one data point in RP is within 0.3 * jkam_avg_time_gap of JKAM time
                 rp_index_list = np.arange(len(rp_creation_time_array))
                 min_diff = np.min(np.abs(rp_creation_time_array - time_temp))
