@@ -62,12 +62,10 @@ class JkamH5FileHandler:
         if self.shots_num == 0:
             self.start_time = file_ctime
         else:
-            self.avg_time_gap = abs((time_temp - self.start_time) / (self.shots_num+1))
+            self.avg_time_gap = abs((time_temp - self.start_time) / (self.shots_num))
             #using self.shots_num to refer to the previous shot (since we don't update shots_nnum until the end of this loop)
-            if (self.shots_num > 0) & (np.abs(time_temp - self.jkam_creation_time_array[self.shots_num] - self.avg_time_gap) > 0.3 * self.avg_time_gap):
+            if (self.shots_num > 0) & (np.abs(time_temp - self.jkam_creation_time_array[self.shots_num-1] - self.avg_time_gap) > 0.2 * self.avg_time_gap):
                 space_correct = False
-            else:
-                self.last_passed_idx = self.shots_num+1
 
 
         # Store space_correct & time_temp for this shot index
@@ -75,13 +73,16 @@ class JkamH5FileHandler:
         self.time_temp_dict[self.shots_num] = time_temp
 
         # Modified cumulative data calculation
-        if space_correct:
-            new_val = (self.cumulative_data[self.last_passed_idx-1] + 1) if self.cumulative_data else 1
+        if self.shots_num == 0:
+            new_val = 1
+        elif space_correct:
+            new_val = (self.cumulative_data[self.last_passed_idx] + 1) if self.cumulative_data else 1
         else:
             new_val = 0
         
         self.cumulative_data.append(new_val)
-
+        if space_correct:
+            self.last_passed_idx = self.shots_num
         self.shots_num += 1
 
         # For FFT example, store the creation time
@@ -128,7 +129,7 @@ class JkamH5FileHandler:
         fig.clear()
         ax = fig.add_subplot(111)
 
-        # Perform FFT of creation times (just a demonstration!)
+        # Perform FFT of creation times (just a demonstration not perfect rn!)
         fft_result = np.fft.fft(self.all_datapoints)
         freqs = np.fft.fftfreq(len(self.all_datapoints))
 
@@ -646,6 +647,7 @@ class RedPitayaFileHandler:
             if jkam_space_correct: #LOOK INTO THIS PART SEEMS FISHY
                 # Check if at least one data point in RP is within 0.3 * jkam_avg_time_gap of JKAM time
                 rp_index_list = np.arange(len(rp_creation_time_array))
+                #FISHY 1: why doing min_diff for jkam? its doing tht only for gage or instrument
                 min_diff = np.min(np.abs(rp_creation_time_array - time_temp))
                 if min_diff <= 0.3*jkam_avg_time_gap:
                     self.mask_valid_data_rp[shot_num] = True
@@ -653,6 +655,7 @@ class RedPitayaFileHandler:
                     self.jkam_rp_matchlist[shot_num] = rp_index_list[idx]
                     self.color_array[shot_num] = "g"
                     self.final_accepted[shot_num] = True
+                    #FISHY 2 = def something wrong with this why you updating last_success_count always
                     if not self.cumulative_data or self.cumulative_data[-1] == 0:
                         last_success_count = highest_count + 1
                     else:
